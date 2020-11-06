@@ -1,6 +1,7 @@
 require('dotenv').config();
 const express = require('express');
 const mongoose = require('mongoose');
+const GoogleStrategy = require('passport-google-oauth20').Strategy; // OAuth Google
 //const encrypt = require('mongoose-encryption'); // encryption
 //const md5 = require('md5'); // hasing
 //const bcrypt = require('bcrypt'); // hasing and salting
@@ -12,6 +13,10 @@ const passportLocalMongoose = require('passport-local-mongoose');
 
 const bodyParser = require('body-parser'); // used to parse information from post requests.
 const keys = require(__dirname + '/config/keys.js');
+
+// used for executing the findOrCreate function call
+// add to schema
+const findOrCreate = require('mongoose-findorcreate');
 
 const app = express();
 const port = 3000;
@@ -37,20 +42,50 @@ mongoose.connect('mongodb://localhost:27017/userDB', { useNewUrlParser: true });
 mongoose.set('useCreateIndex', true); // deprecation // WARNING:
 const userSchema = new mongoose.Schema({
   email: String,
-  password: String
+  password: String,
+  googleId: String
 });
 
 // userSchema.plugin(encrypt, { secret: keys.SECRETEKEY, encryptedFields: ['password'] }); // simple encryption
 // userSchema.plugin(encrypt, { secret: process.env.SECRETEKEY, encryptedFields: ['password'] }); // simple encryption using env variables
 userSchema.plugin(passportLocalMongoose); // plugin for passport for hasing password and saving to local DB
-
+userSchema.plugin(findOrCreate); // plugin for OAuth findOrCreate
 const User = new mongoose.model('User', userSchema);
 
 // creates a local user strategy and pass it on to passport.
 // users should also be serialized and deserialized
 passport.use(User.createStrategy());
-passport.serializeUser(User.serializeUser());
-passport.deserializeUser(User.deserializeUser());
+passport.serializeUser(function(user, done) {
+  done(null, user.id);
+});
+
+passport.deserializeUser(function(id, done) {
+  User.findById(id, function(err, user) {
+    done(err, user);
+  });
+});
+
+passport.use(new GoogleStrategy({
+    clientID: process.env.CLIENT_ID,
+    clientSecret: process.env.CLIENT_SECRET,
+    callbackURL: "http://localhost:3000/auth/google/secrets",
+    userProfileURL: "https://www.googleapis.com/oauth2/v3/userinfo"
+  },
+  function(accessToken, refreshToken, profile, cb) {
+    User.findOrCreate({ googleId: profile.id }, function (err, user) {
+      return cb(err, user);
+    });
+  }
+));
+
+app.get('/auth/google',
+  passport.authenticate('google', { scope: ['profile'] }));
+
+app.get('/auth/google/secrets',
+  passport.authenticate('google', { failureRedirect: '/login' }),
+  function(req, res) {
+    res.redirect('/secrets');
+  });
 
 app.get('/', (req, res) => { // home route
   // res.sendFile(__dirname + '/public/index.html') // using html files
