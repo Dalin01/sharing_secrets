@@ -1,7 +1,10 @@
+require('dotenv').config();
 const express = require('express');
 const mongoose = require('mongoose');
+const encrypt = require('mongoose-encryption');
 
 const bodyParser = require('body-parser'); // used to parse information from post requests.
+const keys = require(__dirname + '/config/keys.js');
 
 const app = express();
 const port = 3000;
@@ -14,10 +17,14 @@ app.use(express.static('public')); // tell app to use static files - images, css
 app.set('view engine', 'ejs'); // sets the view engine as embedded js for templating.
 
 mongoose.connect('mongodb://localhost:27017/userDB', { useNewUrlParser: true });
-const userSchema = {
+const userSchema = new mongoose.Schema({
   email: String,
   password: String
-};
+});
+
+// userSchema.plugin(encrypt, { secret: keys.SECRETEKEY, encryptedFields: ['password'] }); // simple encryption
+userSchema.plugin(encrypt, { secret: process.env.SECRETEKEY, encryptedFields: ['password'] }); // simple encryption using env variables
+
 const User = new mongoose.model('User', userSchema);
 
 app.get('/', (req, res) => { // home route
